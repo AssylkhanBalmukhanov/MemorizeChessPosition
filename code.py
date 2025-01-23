@@ -1,85 +1,84 @@
-import chess #generate chess board
+import chess
+from chessboard import display  # for visual chessboard
+import pandas as pd
 import random
-from chessboard import display # for visual chessboard
-import time
 import threading
+import time
+
+def load_database(file_path):
+    """Loads the pre-sorted CSV database."""
+    return pd.read_csv(file_path)
 
 
-def generate_position(number_of_pieces):
+def binary_search_positions(df, num_pieces):
     """
-    Generates a chessboard with exactly `number_of_pieces`, including both kings.
+    Finds the range of indices with a specific number of pieces using binary search.
+    Returns the leftmost and rightmost indices for the given number of pieces.
     """
-    board = chess.Board()
-    board.clear_board()
+    piece_counts = df["Piece_Count"].tolist()
 
-    if number_of_pieces < 2 or number_of_pieces > 32:
-        print("Invalid number of pieces. Must be between 2 and 32.")
-        return None
+    def find_leftmost(arr, target):
+        left, right = 0, len(arr) - 1
+        result = -1
+        while left <= right:
+            mid = (left + right) // 2
+            if arr[mid] == target:
+                result = mid
+                right = mid - 1  
+            elif arr[mid] < target:
+                left = mid + 1
+            else:
+                right = mid - 1
+        return result
 
-    # define pieces and colors
-    colours = [chess.WHITE, chess.BLACK]
-    all_pieces = [chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN]
+    def find_rightmost(arr, target):
+        left, right = 0, len(arr) - 1
+        result = -1
+        while left <= right:
+            mid = (left + right) // 2
+            if arr[mid] == target:
+                result = mid
+                left = mid + 1  
+            elif arr[mid] < target:
+                left = mid + 1
+            else:
+                right = mid - 1
+        return result
 
-    # place the kings first with valid placement
-    placed_kings = {chess.WHITE: False, chess.BLACK: False}
-    king_positions = []
+    left_index = find_leftmost(piece_counts, num_pieces)
+    right_index = find_rightmost(piece_counts, num_pieces)
 
-    for color in colours:
-        while True:
-            square = random.choice(list(chess.SQUARES))
-            
-            # make sure that square is empty and kings are not adjacent
-            if board.piece_at(square) or any(chess.square_distance(square, pos) <= 1 for pos in king_positions):
-                continue
+    if left_index == -1 or right_index == -1:
+        return None, None
 
-            board.set_piece_at(square, chess.Piece(chess.KING, color))
-            placed_kings[color] = True
-            king_positions.append(square)
-            break
-
-    # place the remaining `number_of_pieces - 2` pieces
-    remaining_pieces = number_of_pieces - 2
-    for _ in range(remaining_pieces):
-        piece = random.choice(all_pieces)
-        color = random.choice(colours)
-        square = random.choice(list(chess.SQUARES))
-
-        # make sure that pawns are not placed on the first or eighth rank
-        while board.piece_at(square) or (piece == chess.PAWN and chess.square_rank(square) in {0, 7}):
-            square = random.choice(list(chess.SQUARES))
-
-        board.set_piece_at(square, chess.Piece(piece, color))
-
-    # check if kings are not in check
-    for color in colours:
-        king_square = board.king(color)
-        if board.is_attacked_by(not color, king_square):
-            print("Generated position has a king in check. Regenerating...")
-            return generate_position(number_of_pieces)  # regenerate the board if invalid
-
-    return board
+    return left_index, right_index
 
 
-
-#function to display the position.
 def display_position(fen):
-    valid_fen = fen
+    """Display the chessboard for the given FEN string."""
     game_board = display.start()
-    display.update(valid_fen, game_board)
-    
+    display.update(fen, game_board)
+
     for _ in range(200):  # 200 iterations of 0.1 seconds = 20 seconds
-        time.sleep(0.1)  
+        time.sleep(0.1)
         if display.check_for_quit():  # allow users to quit the display
             break
-    
+
     display.terminate()
+
+
+def display_position_non_blocking(fen):
+    """Display the chessboard in a separate thread."""
+    thread = threading.Thread(target=display_position, args=(fen,))
+    thread.start()
+    thread.join()  # optional: wait for the thread to finish
+
 
 def guess_the_position(board):
     """
     Allows the user to guess the positions of pieces on the chessboard.
     Displays the actual positions at the end.
     """
-    # get the actual piece positions from the board as a dictionary
     actual_positions = {}
     for square in chess.SQUARES:
         piece = board.piece_at(square)
@@ -93,16 +92,14 @@ def guess_the_position(board):
     user_guesses = {}
     while True:
         guess = input("Enter your guess (e.g., 'e4 N' for a white knight on e4): ").strip()
-        
+
         if guess.lower() == "done":
             break
 
         try:
-            # parse the guess
             position, piece = guess.split()
-            position = position.lower()  # ensure the position is lowercase for comparison
-            
-            # validate the input format
+            position = position.lower()  # check if the position is lowercase for comparison
+
             if position not in chess.SQUARE_NAMES:
                 print("Invalid position! Please use standard chess notation (e.g., 'e4').")
                 continue
@@ -115,7 +112,6 @@ def guess_the_position(board):
         except ValueError:
             print("Invalid input format! Use 'position piece' (e.g., 'e4 N').")
 
-    # compare guesses with the actual board
     correct_guesses = 0
     for position, guessed_piece in user_guesses.items():
         actual_piece = actual_positions.get(position, None)
@@ -125,35 +121,46 @@ def guess_the_position(board):
         else:
             print(f"Incorrect: {guessed_piece} at {position}. Actual: {actual_piece or 'Empty'}")
 
-    # print actual positions of all pieces
+    
     print("\nActual positions of all pieces on the board:")
-    for position, piece in sorted(actual_positions.items()):  # Sort by position for easier reading
+    for position, piece in sorted(actual_positions.items()):  # sort by position for easier reading
         print(f"{position}: {piece}")
 
-    # Calculate the total correct guesses
     print(f"\nYou guessed {correct_guesses} out of {len(actual_positions)} pieces correctly.")
-
-
-def display_position_non_blocking(fen):
-    """Display the board in a separate thread."""
-    thread = threading.Thread(target=display_position, args=(fen,))
-    thread.start()
-    thread.join()  # Wait for the thread to finish (optional, can be omitted for true non-blocking behavior)
 
 
 def main():
     try:
+        file_path = "updated_chessData.csv"  
+        db = load_database(file_path)
+
         total_pieces = int(input("Enter the total number of pieces on the board (2-32): "))
-        random_board = generate_position(total_pieces)
-        if random_board:
-            display_position_non_blocking(random_board.fen())  
-            guess_the_position(random_board)  
-            print("\nGenerated Chess Position:\n")
-            print(random_board)
+        if total_pieces <= 32 and total_pieces >= 2:
+        
+            left, right = binary_search_positions(db, total_pieces)
+
+            if left is not None and right is not None:
+                print(f"Found positions with {total_pieces} pieces between indices {left} and {right}.")
+
+                random_index = random.randint(left, right)
+                selected_fen = db.iloc[random_index]["FEN"]
+                evaluation = db.iloc[random_index]["Evaluation"]
+                print("Displaying the randomly selected position...")
+                display_position_non_blocking(selected_fen)
+
+                board = chess.Board(selected_fen)
+                guess_the_position(board)
+                print(board)
+                print(f"Stockfish evaluation for this position is {evaluation}")
+            else:
+                print(f"No positions found with {total_pieces} pieces.")
+        else:
+            print(f"Please input value between 2 and 32")
     except ValueError:
         print("Invalid input! Please enter an integer.")
+    except FileNotFoundError:
+        print(f"File {file_path} not found. Ensure the database file exists.")
 
 
-
-main()
-
+if __name__ == "__main__":
+    main()
