@@ -9,51 +9,6 @@ def load_database(file_path):
     """Loads the pre-sorted CSV database."""
     return pd.read_csv(file_path)
 
-
-def binary_search_positions(df, num_pieces):
-    """
-    Finds the range of indices with a specific number of pieces using binary search.
-    Returns the leftmost and rightmost indices for the given number of pieces.
-    """
-    piece_counts = df["Piece_Count"].tolist()
-
-    def find_leftmost(arr, target):
-        left, right = 0, len(arr) - 1
-        result = -1
-        while left <= right:
-            mid = (left + right) // 2
-            if arr[mid] == target:
-                result = mid
-                right = mid - 1  
-            elif arr[mid] < target:
-                left = mid + 1
-            else:
-                right = mid - 1
-        return result
-
-    def find_rightmost(arr, target):
-        left, right = 0, len(arr) - 1
-        result = -1
-        while left <= right:
-            mid = (left + right) // 2
-            if arr[mid] == target:
-                result = mid
-                left = mid + 1  
-            elif arr[mid] < target:
-                left = mid + 1
-            else:
-                right = mid - 1
-        return result
-
-    left_index = find_leftmost(piece_counts, num_pieces)
-    right_index = find_rightmost(piece_counts, num_pieces)
-
-    if left_index == -1 or right_index == -1:
-        return None, None
-
-    return left_index, right_index
-
-
 def display_position(fen):
     """Display the chessboard for the given FEN string."""
     game_board = display.start()
@@ -65,6 +20,17 @@ def display_position(fen):
             break
 
     display.terminate()
+
+
+def locate_positions(indices_df, number_of_pieces):
+    row = indices_df[indices_df["Num_Pieces"] == number_of_pieces]
+    if row.empty:
+        return None, None
+    left_index = row.iloc[0]["Leftmost_Index"]
+    right_index = row.iloc[0]["Rightmost_Index"]
+    if pd.isna(left_index) or pd.isna(right_index):
+        return None, None
+    return int(left_index), int(right_index)
 
 
 def display_position_non_blocking(fen):
@@ -131,13 +97,15 @@ def guess_the_position(board):
 
 def main():
     try:
-        file_path = "updated_chessData.csv"  
-        db = load_database(file_path)
+        # Load both the chess database and the pre-calculated indices
+        chess_file_path = "updated_chessData.csv"
+        indices_file_path = "piece_count_indices.csv"
+        db = load_database(chess_file_path)
+        indices_db = load_database(indices_file_path)
 
         total_pieces = int(input("Enter the total number of pieces on the board (2-32): "))
-        if total_pieces <= 32 and total_pieces >= 2:
-        
-            left, right = binary_search_positions(db, total_pieces)
+        if 2 <= total_pieces <= 32:  # Assuming you want 2-32, adjust to 36 if needed
+            left, right = locate_positions(indices_db, total_pieces)
 
             if left is not None and right is not None:
                 print(f"Found positions with {total_pieces} pieces between indices {left} and {right}.")
@@ -155,12 +123,13 @@ def main():
             else:
                 print(f"No positions found with {total_pieces} pieces.")
         else:
-            print(f"Please input value between 2 and 32")
+            print("Please input a value between 2 and 32")
     except ValueError:
         print("Invalid input! Please enter an integer.")
-    except FileNotFoundError:
-        print(f"File {file_path} not found. Ensure the database file exists.")
-
+    except FileNotFoundError as e:
+        print(f"File not found: {e.filename}. Ensure the database files exist.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
